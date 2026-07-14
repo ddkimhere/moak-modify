@@ -149,13 +149,13 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 모든 정답은 본문에서 확인 가능해야 한다.
 문제를 어렵게 만드는 것이 아니라 사고 과정을 깊게 만든다.
 학생이 문제를 풀면서 영어 실력이 향상되도록 설계한다.
-최종 결과물은 실제 고등학교 중간·기말고사에 바로 사용할 수 있는 수준의 완성도를 목표로 한다.
+최종 결과물은 실제 고등학교 중간·기말고사에 바로 사용할 수 있는 수준의 완성도를 목표로 단다.
 """
 
 def generate_exam_question(passage: str, q_type: str, difficulty: str):
     """
     지문과 조건을 받아 Gemini API를 통해 한 문항의 변형 문제를 생성합니다.
-    서버 트래픽 초과(503) 오류를 대비하여 자동 재시도 로직이 포함되어 있습니다.
+    서버 트래픽 초과(503/429) 오류를 대비하여 자동 재시도 로직이 강화되었습니다.
     """
     prompt = f"""
     아래 제공된 [원문 지문]을 철저히 분석한 뒤, '{q_type}' 유형의 문제를 '{difficulty}' 난이도로 딱 1문제만 출제하시오.
@@ -165,7 +165,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     {passage}
     """
     
-    max_retries = 5  # 최대 5번 재시도
+    max_retries = 6  # 최대 6번까지 끈기 있게 재시도
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -180,10 +180,12 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
             return json.loads(response.text)
             
         except Exception as e:
-            # 503 에러이거나 429(Too Many Requests) 에러일 경우 재시도
-            if "503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e):
+            error_msg = str(e).upper()
+            # 503, 429 등 서버 과부하 에러 시 대기 후 재시도
+            if "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg or "QUOTA" in error_msg:
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # 1초, 2초, 4초, 8초... 점진적으로 대기 시간 증가
+                    wait_time = (2 ** attempt) + 1  # 2초, 3초, 5초, 9초... 점진적으로 대기
+                    time.sleep(wait_time)
                     continue
             # 다른 종류의 에러이거나 최대 재시도 횟수를 초과하면 에러 발생
             raise e
@@ -234,17 +236,15 @@ if st.button("🚀 시험지 전체 출제 시작", type="primary"):
         
         def process_question(idx, q_data):
             """개별 문항을 처리하는 보조 함수"""
-            # fast_mode 변수가 없으므로 제거함
             parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'])
             return idx, parsed_result
 
         try:
-            status_text.text(f"총 {num_questions}문항을 동시에 분석 및 출제 중입니다. 잠시만 기다려주세요...")
+            status_text.text(f"총 {num_questions}문항을 병렬 분석 및 출제 중입니다. 잠시만 기다려주세요...")
             completed = 0
             
-            # 멀티스레딩을 이용한 병렬 처리 (동시 출제로 속도 극대화)
-            # max_workers를 통해 한 번에 동시에 돌릴 AI의 수를 정합니다.
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 10)) as executor:
+            # 구글 서버 과부하를 막기 위해 max_workers를 3으로 제한 (최대 3개씩만 동시 요청)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 3)) as executor:
                 # 모든 문항 출제 작업을 동시에 스레드풀에 예약
                 futures = {executor.submit(process_question, i, q): i for i, q in enumerate(questions_data)}
                 
