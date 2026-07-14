@@ -51,7 +51,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     {passage}
     """
     
-    # 올바른 퍼블릭 공식 모델 이름으로 수정
+    # 사용자가 직접 해결한 3.5-flash 모델명 적용
     response = client.models.generate_content(
         model='gemini-3.5-flash',
         contents=[MASTER_PROMPT, prompt],
@@ -101,36 +101,88 @@ if st.button("🚀 문제 출제 시작", type="primary"):
                 
                 st.success("🎉 문제 출제가 완료되었습니다!")
                 
-                # 결과 UI 예쁘게 배치
-                st.subheader("💡 생성된 문제")
+                # 웹 뷰와 인쇄용 미리보기 뷰를 탭(Tab)으로 분리
+                tab1, tab2 = st.tabs(["💡 생성된 문제 (웹 뷰)", "🖨️ 미리보기 및 출력"])
                 
-                # 1. 문제 발문 출력
-                st.markdown(f"**{parsed_result['question_text']}**")
-                st.write("") # 빈 줄
-                
-                # 2. 실제 모의고사 시험지 느낌의 지문 박스 디자인 적용 (HTML/CSS)
+                # 지문 줄바꿈 처리 및 보기 번호 세팅
                 passage_html = parsed_result['passage'].replace('\n', '<br>')
-                st.markdown(f"""
-                <div style="border: 1.5px solid #000; padding: 25px; margin-bottom: 20px; font-family: 'Times New Roman', Batang, serif; font-size: 17px; line-height: 1.8; background-color: #ffffff; color: #000000; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);">
-                    {passage_html}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # 3. 보기 출력 (①, ②, ③, ④, ⑤ 정상 포맷팅)
                 circle_nums = ["①", "②", "③", "④", "⑤"]
-                for i, opt in enumerate(parsed_result['options']):
-                    num = circle_nums[i] if i < 5 else f"{i+1}."
-                    st.markdown(f"<span style='font-size: 16px;'>{num} {opt}</span>", unsafe_allow_html=True)
                 
-                st.write("") # 빈 줄
-                
-                with st.expander("✅ 정답 및 AI 해설 위원회 리포트 보기"):
-                    st.markdown(f"**📍 정답:** {parsed_result['correct_answer']}번")
-                    st.markdown(f"**🎯 출제 의도:** {parsed_result['intent']}")
-                    st.markdown(f"**🔎 본문 근거:** {parsed_result['text_evidence']}")
-                    st.markdown(f"**📖 상세 해설:** {parsed_result['explanation']}")
-                    st.markdown(f"**🛑 오답 분석:** {parsed_result['distractor_analysis']}")
-                    st.markdown(f"**⚠️ 학생들의 잦은 실수:** {parsed_result['common_mistakes']}")
+                # ==========================================
+                # TAB 1: 웹 뷰 (해설 포함)
+                # ==========================================
+                with tab1:
+                    st.subheader("💡 생성된 문제")
+                    
+                    # 1. 문제 발문 출력
+                    st.markdown(f"**{parsed_result['question_text']}**")
+                    st.write("") # 빈 줄
+                    
+                    # 2. 실제 모의고사 시험지 느낌의 지문 박스 디자인 적용
+                    st.markdown(f"""
+                    <div style="border: 1.5px solid #000; padding: 25px; margin-bottom: 20px; font-family: 'Times New Roman', Batang, serif; font-size: 17px; line-height: 1.8; background-color: #ffffff; color: #000000; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);">
+                        {passage_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 3. 보기 출력 (중복 번호 방지 로직 적용)
+                    for i, opt in enumerate(parsed_result['options']):
+                        num = circle_nums[i] if i < 5 else f"{i+1}."
+                        # AI가 보기 안에 번호를 섞어 보냈을 경우, 앞의 번호와 공백을 깔끔하게 제거
+                        clean_opt = opt.lstrip("①②③④⑤12345. ")
+                        st.markdown(f"<span style='font-size: 16px;'>{num} {clean_opt}</span>", unsafe_allow_html=True)
+                    
+                    st.write("") # 빈 줄
+                    
+                    with st.expander("✅ 정답 및 AI 해설 위원회 리포트 보기"):
+                        st.markdown(f"**📍 정답:** {parsed_result['correct_answer']}번")
+                        st.markdown(f"**🎯 출제 의도:** {parsed_result['intent']}")
+                        st.markdown(f"**🔎 본문 근거:** {parsed_result['text_evidence']}")
+                        st.markdown(f"**📖 상세 해설:** {parsed_result['explanation']}")
+                        st.markdown(f"**🛑 오답 분석:** {parsed_result['distractor_analysis']}")
+                        st.markdown(f"**⚠️ 학생들의 잦은 실수:** {parsed_result['common_mistakes']}")
+
+                # ==========================================
+                # TAB 2: 출력용 미리보기 (iframe 인쇄 기능)
+                # ==========================================
+                with tab2:
+                    st.info("💡 아래 [출력하기] 버튼을 누르면 시험지 형태로 깔끔하게 인쇄할 수 있습니다.")
+                    
+                    # 출력용 보기 HTML 텍스트 생성
+                    options_html = "<br><br>".join([f"{circle_nums[i] if i < 5 else str(i+1)+'.'} {opt.lstrip('①②③④⑤12345. ')}" for i, opt in enumerate(parsed_result['options'])])
+                    
+                    # 완벽하게 격리된 HTML 구성 (CSS 인쇄 스타일 포함)
+                    print_html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                        body {{ background-color: #f0f2f6; font-family: 'Times New Roman', Batang, 'Malgun Gothic', serif; padding: 20px; }}
+                        .paper {{ background-color: white; color: black; padding: 40px; margin: 0 auto; max-width: 800px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border: 1px solid #ccc; }}
+                        .question {{ font-size: 18px; font-weight: bold; margin-bottom: 20px; }}
+                        .passage {{ border: 1.5px solid #000; padding: 25px; margin-bottom: 20px; font-size: 17px; line-height: 1.8; }}
+                        .options {{ font-size: 16px; line-height: 1.8; }}
+                        .print-btn {{ display: block; margin: 0 auto 20px auto; padding: 10px 30px; font-size: 16px; font-weight: bold; color: white; background-color: #ff4b4b; border: none; border-radius: 5px; cursor: pointer; }}
+                        .print-btn:hover {{ background-color: #ff3333; }}
+                        @media print {{
+                            body {{ background-color: white; padding: 0; }}
+                            .paper {{ box-shadow: none; border: none; max-width: 100%; padding: 0; }}
+                            .print-btn {{ display: none; }} /* 인쇄 시 버튼은 숨김 처리 */
+                        }}
+                    </style>
+                    </head>
+                    <body>
+                        <button class="print-btn" onclick="window.print()">🖨️ 이 문제 출력하기</button>
+                        <div class="paper">
+                            <div class="question">{parsed_result['question_text']}</div>
+                            <div class="passage">{passage_html}</div>
+                            <div class="options">{options_html}</div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    # Streamlit의 components.html을 사용하여 출력 전용 격리 공간 생성
+                    st.components.v1.html(print_html, height=800, scrolling=True)
                     
             except Exception as e:
                 st.error(f"오류가 발생했습니다: {e}")
