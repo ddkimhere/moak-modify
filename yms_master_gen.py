@@ -95,7 +95,7 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 동의어·반의어는 문맥 안에서 판단하도록 만든다.
 
 11. 오답 제작 원칙
-오답은 반드시 그럴듯해야 한다.
+오답은 반드시 그럴듯해야 단다.
 다음 유형을 활용한다: 일부만 맞는 내용, 논리 오류, 인과관계 오류, 지시어 오류, 문법 오류, 문맥상 의미 오류
 말이 되지 않는 오답은 금지한다.
 모든 오답에는 틀린 이유가 존재해야 한다.
@@ -234,7 +234,8 @@ if st.button("🚀 시험지 전체 출제 시작", type="primary"):
         
         def process_question(idx, q_data):
             """개별 문항을 처리하는 보조 함수"""
-            parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'], fast_mode)
+            # fast_mode 변수가 없으므로 제거함
+            parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'])
             return idx, parsed_result
 
         try:
