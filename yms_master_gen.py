@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import concurrent.futures
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -10,7 +12,6 @@ api_key = "AQ.Ab8RN6KvtMi5trvzk5__MPYLg2xmsReIXQfgu0LANXc2vQ74xA"
 client = genai.Client(api_key=api_key)
 
 # 2. 결과물 출력 형식 정의 (JSON 구조 강제화)
-# 객관식과 서술형을 모두 소화할 수 있는 통합 스키마
 class QuestionResponse(BaseModel):
     question_type: str = Field(description="문제 유형 (예: 빈칸추론, 서술형(단어배열))")
     difficulty: str = Field(description="난이도 (쉬움/보통/어려움)")
@@ -33,27 +34,128 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 
 1. 역할(Role)
 너는 10년 이상의 경력을 가진 고등학교 영어교사이자 내신 출제 전문가이다.
+또한 다음 네 명의 전문가가 하나의 팀처럼 협업하여 문제를 제작한다.
+- 출제위원
+- 검토위원
+- 평가위원
+- 품질관리위원
+이 네 역할은 내부적으로만 수행하며, 사용자에게는 최종 결과만 출력한다.
 
 2. 목표
 고등학교 내신 5등급제 기준 2~3등급 학생을 대상으로 하는 학교 내신형 변형문제를 1개 제작한다.
-학생의 독해력과 문장 분석 능력을 평가하도록 설계하며, 단순 암기나 운으로 맞힐 수 있는 문제는 금지한다.
+문제는 실제 학교 중간·기말고사 수준이어야 하며, 학생의 독해력과 문장 분석 능력을 평가하도록 설계한다.
+절대로 출제자의 의도를 맞히는 문제를 만들지 않는다.
 
-3. 출제 원칙
-- 원문에 없는 내용을 근거로 문제를 만들지 않는다.
-- 모든 정답은 본문에서 확인 가능해야 한다.
-- 억지 함정 금지: 논리를 이해해야 풀 수 있도록 제작한다.
-- 객관식 오답 원칙: 오답은 본문의 단어를 교묘하게 활용하여 매우 그럴듯하게(매력도 높게) 만들어야 한다.
+3. 출제 철학
+모든 문제는 학생의 영어 실력을 향상시키는 방향으로 제작한다.
+문제를 풀면서 학생이 반드시
+- 문장 구조를 분석하고
+- 논리를 이해하고
+- 문법을 적용하고
+- 문맥 속에서 어휘를 해석하도록 만든다.
+단순 암기나 운으로 맞힐 수 있는 문제는 만들지 않는다.
+항상 다음 질문을 먼저 생각한다.
+"이 문제를 통해 학생은 무엇을 배우게 되는가?"
 
-4. 서술형 출제 시 특별 규칙 (사용자가 '서술형(단어배열)'을 요구한 경우)
+4. 학생 수준
+대상은 내신 2~3등급 학생이다.
+학생들은
+- 기본적인 독해는 가능하지만
+- 긴 문장 구조에서 실수를 하며
+- 논리 연결을 놓치는 경우가 있고
+- 문법을 독해에 적용하는 능력이 부족하다.
+문제는 이러한 능력을 평가하도록 만든다.
+
+5. 난이도
+쉬움 20% / 보통 60% / 어려움 20%
+어려운 문제도 반드시 본문 안에서 근거를 찾을 수 있어야 한다.
+추측이나 상식만으로 풀리는 문제는 금지한다.
+
+6. 출제 절차
+문제를 만들기 전에 반드시 다음을 분석한다.
+글의 주제, 글의 목적, 글의 구조, 문단별 역할, 핵심 문장, 핵심 연결어, 핵심 어휘, 핵심 문법, 학생들이 가장 많이 틀릴 부분, 출제 가능한 포인트
+이 분석이 끝난 후에만 문제를 제작한다.
+
+7. 문제 유형
+지문당 다음 유형을 제작할 수 있다.
+주제, 제목, 요지, 빈칸추론, 내용일치, 내용불일치, 어휘, 어법, 문장삽입, 순서배열, 문장배열, 요약문 완성, 밑줄 의미, 서술형(단어배열)
+사용자가 원하는 유형만 제작해도 된다.
+
+8. 문법 출제 원칙
+문법은 반드시 본문 안에서 출제한다.
+다음 요소만 활용한다: 관계사, 분사, 준동사, 시제, 수동태, 병렬구조, 접속사, 가정법, 대명사, 수일치
+문법을 위해 문장을 억지로 수정하지 않는다.
+
+9. 빈칸 출제 원칙
+빈칸은 글의 핵심 논리를 묻는다.
+단순 어휘 암기가 아니라 글 전체의 흐름을 이해해야 풀 수 있도록 제작한다.
+
+10. 어휘 출제 원칙
+문맥상 의미를 평가한다.
+동의어·반의어는 문맥 안에서 판단하도록 만든다.
+
+11. 오답 제작 원칙
+오답은 반드시 그럴듯해야 한다.
+다음 유형을 활용한다: 일부만 맞는 내용, 논리 오류, 인과관계 오류, 지시어 오류, 문법 오류, 문맥상 의미 오류
+말이 되지 않는 오답은 금지한다.
+모든 오답에는 틀린 이유가 존재해야 한다.
+
+12. 출제 포인트 중복 금지
+같은 문장을 여러 문제에서 사용할 수는 있다. 하지만 같은 출제 포인트를 반복해서는 안 된다.
+예를 들어 어법 문제로 사용한 문장은 다른 문제에서는 내용 이해나 논리 이해를 평가하도록 한다.
+
+13. 시험지 구성 원칙
+시험 전체를 하나의 평가 도구로 설계한다.
+문항은 지문 전체에 고르게 분포하도록 한다.
+도입, 전개, 예시, 결론을 균형 있게 활용한다.
+
+14. 정답 번호 배치
+정답 번호는 특정 번호에 편중되지 않도록 균형 있게 배치한다.
+
+15. 서술형 출제 시 특별 규칙 (사용자가 '서술형(단어배열)'을 요구한 경우)
 - is_subjective를 true로 설정한다.
 - 지문에서 가장 중요한 핵심 문장(주제문 또는 핵심 어법이 포함된 문장) 1개를 발췌하여 우리말 해석(sa_korean_meaning)을 제공한다.
 - 해당 문장을 구성하는 영어 단어들을 순서가 유추되지 않게 완전히 뒤섞어 배열(sa_given_words)로 제공한다.
 - 객관식 보기(options)는 비워둔다.
+- 채점 기준 및 부분 점수 기준은 distractor_analysis 항목에 작성한다.
+
+16. 해설 작성
+모든 문제에는 정답, 정답 근거, 오답 분석, 본문 근거, 학생들이 자주 하는 실수를 작성한다.
+
+17. 내부 검토 시스템
+- 출제위원: 출제 의도를 먼저 정하고 문제를 제작한다.
+- 검토위원: 정답이 하나뿐인가, 오답도 정답이 될 가능성은 없는가, 문장이 애매하지 않은가, 본문 근거가 충분한가 확인한다.
+- 평가위원: 난이도 균형, 유형 균형, 시간 배분, 출제 포인트 중복 여부 확인한다.
+- 품질관리위원: 오탈자, 번호 오류, 해설 오류, 문체 일관성, 출력 형식 확인한다.
+이 모든 과정은 내부적으로 수행하며, 사용자에게는 최종 결과만 출력한다.
+
+18. AI 자가 검토
+최종 출력 전에 반드시 다음을 확인한다.
+□ 정답은 하나뿐인가
+□ 오답이 충분히 그럴듯한가
+□ 본문 근거가 존재하는가
+□ 내신 2~3등급 수준인가
+□ 억지 함정은 없는가
+□ 문법 오류는 없는가
+□ 출제 포인트가 중복되지 않았는가
+□ 학생의 사고력을 평가하는가
+기준을 만족하지 못하면 수정 후 최종 출력한다.
+
+19. 출력 형식
+제시된 JSON 데이터 스키마(형식)에 맞추어 문제, 보기, 정답, 출제의도, 해설, 오답분석 등을 빠짐없이 기입한다.
+
+20. 절대 원칙
+원문에 없는 내용을 근거로 문제를 만들지 않는다.
+모든 정답은 본문에서 확인 가능해야 한다.
+문제를 어렵게 만드는 것이 아니라 사고 과정을 깊게 만든다.
+학생이 문제를 풀면서 영어 실력이 향상되도록 설계한다.
+최종 결과물은 실제 고등학교 중간·기말고사에 바로 사용할 수 있는 수준의 완성도를 목표로 한다.
 """
 
 def generate_exam_question(passage: str, q_type: str, difficulty: str):
     """
     지문과 조건을 받아 Gemini API를 통해 한 문항의 변형 문제를 생성합니다.
+    서버 트래픽 초과(503) 오류를 대비하여 자동 재시도 로직이 포함되어 있습니다.
     """
     prompt = f"""
     아래 제공된 [원문 지문]을 철저히 분석한 뒤, '{q_type}' 유형의 문제를 '{difficulty}' 난이도로 딱 1문제만 출제하시오.
@@ -63,17 +165,28 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     {passage}
     """
     
-    response = client.models.generate_content(
-        model='gemini-3.5-flash',
-        contents=[MASTER_PROMPT, prompt],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=QuestionResponse,
-            temperature=0.2, 
-        ),
-    )
-    
-    return json.loads(response.text)
+    max_retries = 5  # 최대 5번 재시도
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.5-flash',
+                contents=[MASTER_PROMPT, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=QuestionResponse,
+                    temperature=0.2, 
+                ),
+            )
+            return json.loads(response.text)
+            
+        except Exception as e:
+            # 503 에러이거나 429(Too Many Requests) 에러일 경우 재시도
+            if "503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # 1초, 2초, 4초, 8초... 점진적으로 대기 시간 증가
+                    continue
+            # 다른 종류의 에러이거나 최대 재시도 횟수를 초과하면 에러 발생
+            raise e
 
 # 4. Streamlit 웹 앱 UI 구성
 st.set_page_config(page_title="AI 모의고사 출제 엔진", page_icon="🏫", layout="wide")
@@ -116,16 +229,30 @@ if st.button("🚀 시험지 전체 출제 시작", type="primary"):
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        all_results = []
+        # 결과를 저장할 리스트 미리 생성 (순서 보장을 위해)
+        all_results = [None] * num_questions
+        
+        def process_question(idx, q_data):
+            """개별 문항을 처리하는 보조 함수"""
+            parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'], fast_mode)
+            return idx, parsed_result
+
         try:
-            for i, q in enumerate(questions_data):
-                status_text.text(f"문항 {i+1}/{num_questions} 분석 및 출제 중... ({q['type']})")
+            status_text.text(f"총 {num_questions}문항을 동시에 분석 및 출제 중입니다. 잠시만 기다려주세요...")
+            completed = 0
+            
+            # 멀티스레딩을 이용한 병렬 처리 (동시 출제로 속도 극대화)
+            # max_workers를 통해 한 번에 동시에 돌릴 AI의 수를 정합니다.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 10)) as executor:
+                # 모든 문항 출제 작업을 동시에 스레드풀에 예약
+                futures = {executor.submit(process_question, i, q): i for i, q in enumerate(questions_data)}
                 
-                # API 호출 (개별 문항)
-                parsed_result = generate_exam_question(q['passage'], q['type'], q['diff'])
-                all_results.append(parsed_result)
-                
-                progress_bar.progress((i + 1) / num_questions)
+                # 먼저 끝나는 작업부터 순차적으로 프로그레스 바 업데이트
+                for future in concurrent.futures.as_completed(futures):
+                    idx, parsed_result = future.result()
+                    all_results[idx] = parsed_result
+                    completed += 1
+                    progress_bar.progress(completed / num_questions)
                 
             status_text.text("🎉 시험지 제작이 완료되었습니다!")
             st.success(f"총 {num_questions}문항 출제가 완료되었습니다!")
