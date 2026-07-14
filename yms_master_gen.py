@@ -1,16 +1,15 @@
 import os
 import json
+import streamlit as st
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# 1. API 키 확인 및 클라이언트 초기화
-# 환경 변수 대신 API 키를 직접 입력합니다 (주의: 코드 공유 시 유출에 주의하세요!)
+# 1. API 키 설정 (하드코딩 방식)
 api_key = "AQ.Ab8RN6KvtMi5trvzk5__MPYLg2xmsReIXQfgu0LANXc2vQ74xA"
-
 client = genai.Client(api_key=api_key)
 
-# 2. 결과물 출력 형식 정의 (프론트엔드와 연결하기 쉽도록 JSON 구조 강제화)
+# 2. 결과물 출력 형식 정의 (JSON 구조 강제화)
 class QuestionResponse(BaseModel):
     question_type: str = Field(description="문제 유형 (예: 빈칸추론)")
     difficulty: str = Field(description="난이도 (쉬움/보통/어려움)")
@@ -35,7 +34,7 @@ MASTER_PROMPT = """
 
 [절대 원칙]
 1. 원문에 없는 내용을 근거로 문제를 만들지 않는다.
-2. 모든 정답은 본문에서 확인 가능해야 단다.
+2. 모든 정답은 본문에서 확인 가능해야 한다.
 3. 억지 함정 금지: 논리를 이해해야 풀 수 있도록 제작한다.
 4. 오답 제작 원칙: 오답은 본문의 단어를 교묘하게 활용하여 매우 그럴듯하게(매력도 높게) 만들어야 하며, 모든 오답에는 틀린 이유가 존재해야 한다.
 """
@@ -44,10 +43,6 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     """
     지문과 조건을 받아 Gemini API를 통해 완벽한 형태의 변형 문제를 생성합니다.
     """
-    print(f"\n[{q_type} / {difficulty}] 난이도로 문제 생성을 시작합니다...")
-    print("AI 위원회(출제/검토/평가/품질)가 분석 및 검증 중입니다. 잠시만 기다려주세요...\n")
-    
-    # AI에게 전달할 최종 명령
     prompt = f"""
     아래 제공된 [원문 지문]을 철저히 분석한 뒤, '{q_type}' 유형의 문제를 '{difficulty}' 난이도로 출제하시오.
     반드시 4단계 검토(출제->검토->평가->품질관리)를 스스로 거친 후, 오류가 없는 최종 결과물만 반환하시오.
@@ -56,68 +51,73 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     {passage}
     """
     
-    # 모델 이름을 가장 최신 기본 개방 모델인 gemini-2.5-flash 로 설정합니다.
-    # 구글 최신 SDK의 Structured Outputs 기능 적용
     response = client.models.generate_content(
         model='gemini-2.5-flash',
         contents=[MASTER_PROMPT, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=QuestionResponse,
-            temperature=0.2, # 일관성 있고 정확한 출제를 위해 낮게 설정
+            temperature=0.2, 
         ),
     )
     
     return response.text
 
-# 4. 실행 테스트 (터미널에서 직접 입력받도록 수정)
-if __name__ == "__main__":
-    print("\n================================================")
-    print("  🏫 AI 모의고사 변형 문제 출제 엔진 작동 시작  ")
-    print("================================================\n")
-    
-    print("[1단계] 변형 문제를 만들 영어 지문을 아래에 붙여넣으세요.")
-    print("(※ 지문을 모두 붙여넣은 뒤, 입력을 끝내려면 엔터(Enter)를 연속으로 두 번 누르세요):")
-    print("-" * 50)
-    
-    lines = []
-    while True:
-        try:
-            line = input()
-            # 아무것도 입력하지 않고 엔터를 쳤을 때 (연속 엔터 감지)
-            if not line.strip() and len(lines) > 0:
-                break
-            if line.strip():
-                lines.append(line)
-        except EOFError:
-            break
-            
-    user_passage = "\n".join(lines)
-    
+# 4. Streamlit 웹 앱 UI 구성
+st.set_page_config(page_title="AI 모의고사 출제 엔진", page_icon="🏫", layout="wide")
+
+st.title("🏫 AI 모의고사 변형 문제 출제 엔진")
+st.markdown("영어 지문을 입력하고 옵션을 선택하면 AI 위원회가 완벽한 문제를 출제해 줍니다.")
+
+# 지문 입력 영역
+user_passage = st.text_area("📚 변형 문제를 만들 영어 지문을 붙여넣으세요:", height=200)
+
+# 옵션 선택 영역
+col1, col2 = st.columns(2)
+with col1:
+    selected_type = st.selectbox(
+        "📝 원하는 문제 유형을 선택하세요", 
+        ["빈칸추론", "주제", "제목", "요지", "어법", "어휘", "문장삽입", "순서배열", "내용일치"]
+    )
+with col2:
+    selected_diff = st.selectbox(
+        "🔥 난이도를 선택하세요", 
+        ["보통", "쉬움", "어려움"]
+    )
+
+st.divider()
+
+# 출제 버튼 및 결과 화면
+if st.button("🚀 문제 출제 시작", type="primary"):
     if not user_passage.strip():
-        print("\n입력된 지문이 없습니다. 프로그램을 종료합니다.")
+        st.warning("⚠️ 지문을 먼저 입력해주세요!")
     else:
-        print("-" * 50)
-        print("\n[2단계] 문제 출제 조건을 입력해 주세요.")
-        
-        # 사용자로부터 원하는 유형과 난이도를 입력받습니다.
-        selected_type = input("▶ 원하는 문제 유형을 입력하세요 (예: 빈칸추론, 어법, 문장삽입 등): ")
-        if not selected_type.strip():
-            selected_type = "빈칸추론" # 기본값
-            
-        selected_diff = input("▶ 원하는 난이도를 입력하세요 (예: 쉬움, 보통, 어려움): ")
-        if not selected_diff.strip():
-            selected_diff = "보통" # 기본값
-        
-        try:
-            # 엔진 가동
-            result_json_string = generate_exam_question(user_passage, selected_type, selected_diff)
-            
-            # 보기 좋게 출력
-            parsed_result = json.loads(result_json_string)
-            print("\n====== [ 🎉 문제 출제 완료 🎉 ] ======\n")
-            print(json.dumps(parsed_result, indent=4, ensure_ascii=False))
-            
-        except Exception as e:
-            print(f"\n오류가 발생했습니다: {e}")
-            
+        with st.spinner(f"AI 위원회(출제/검토/평가/품질)가 [{selected_type} / {selected_diff}] 문제를 분석 및 출제 중입니다. 잠시만 기다려주세요..."):
+            try:
+                # 엔진 가동
+                result_json_string = generate_exam_question(user_passage, selected_type, selected_diff)
+                parsed_result = json.loads(result_json_string)
+                
+                st.success("🎉 문제 출제가 완료되었습니다!")
+                
+                # 결과 UI 예쁘게 배치
+                st.subheader("💡 생성된 문제")
+                st.markdown(f"**Q. {parsed_result['question_text']}**")
+                
+                st.info(parsed_result['passage'])
+                
+                for i, opt in enumerate(parsed_result['options'], 1):
+                    st.markdown(f"①②③④⑤[{i-1}] {opt}" if i <= 5 else f"**{i}**. {opt}") # 간단한 번호 포매팅
+                
+                st.write("") # 빈 줄
+                
+                with st.expander("✅ 정답 및 AI 해설 위원회 리포트 보기"):
+                    st.markdown(f"**📍 정답:** {parsed_result['correct_answer']}번")
+                    st.markdown(f"**🎯 출제 의도:** {parsed_result['intent']}")
+                    st.markdown(f"**🔎 본문 근거:** {parsed_result['text_evidence']}")
+                    st.markdown(f"**📖 상세 해설:** {parsed_result['explanation']}")
+                    st.markdown(f"**🛑 오답 분석:** {parsed_result['distractor_analysis']}")
+                    st.markdown(f"**⚠️ 학생들의 잦은 실수:** {parsed_result['common_mistakes']}")
+                    
+            except Exception as e:
+                st.error(f"오류가 발생했습니다: {e}")
