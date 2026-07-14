@@ -169,7 +169,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
         try:
             # 선생님의 요청에 따라 gemini-3.5-flash 모델로 고정합니다.
             response = client.models.generate_content(
-                model='gemini-3.5-pro',
+                model='gemini-3.5-flash',
                 contents=[MASTER_PROMPT, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
