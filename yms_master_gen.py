@@ -69,7 +69,7 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 5. 난이도
 쉬움 20% / 보통 60% / 어려움 20%
 어려운 문제도 반드시 본문 안에서 근거를 찾을 수 있어야 한다.
-추측이나 상식만으로 풀리는 문제는 금지한다.
+추측이나 상식만으로 풀리는 문제는 금지 편집한다.
 
 6. 출제 절차
 문제를 만들기 전에 반드시 다음을 분석한다.
@@ -155,7 +155,6 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 def generate_exam_question(passage: str, q_type: str, difficulty: str):
     """
     지문과 조건을 받아 Gemini API를 통해 한 문항의 변형 문제를 생성합니다.
-    서버 트래픽 초과(503/429) 오류를 대비하여 자동 재시도 로직이 강화되었습니다.
     """
     prompt = f"""
     아래 제공된 [원문 지문]을 철저히 분석한 뒤, '{q_type}' 유형의 문제를 '{difficulty}' 난이도로 딱 1문제만 출제하시오.
@@ -165,9 +164,10 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     {passage}
     """
     
-    max_retries = 6  # 최대 6번까지 끈기 있게 재시도
+    max_retries = 5
     for attempt in range(max_retries):
         try:
+            # 선생님의 요청에 따라 gemini-3.5-flash 모델로 고정합니다.
             response = client.models.generate_content(
                 model='gemini-3.5-flash',
                 contents=[MASTER_PROMPT, prompt],
@@ -181,20 +181,19 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
             
         except Exception as e:
             error_msg = str(e).upper()
-            # 503, 429 등 서버 과부하 에러 시 대기 후 재시도
+            # 503(서버 자체 오류) 등의 경우에만 잠깐 쉬었다가 재시도합니다.
             if "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg or "QUOTA" in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) + 1  # 2초, 3초, 5초, 9초... 점진적으로 대기
+                    wait_time = (attempt + 1) * 2  # 유료키 환경이므로 대기 시간을 조금 더 짧게 가져갑니다.
                     time.sleep(wait_time)
                     continue
-            # 다른 종류의 에러이거나 최대 재시도 횟수를 초과하면 에러 발생
             raise e
 
 # 4. Streamlit 웹 앱 UI 구성
 st.set_page_config(page_title="AI 모의고사 출제 엔진", page_icon="🏫", layout="wide")
 
 st.title("🏫 AI 모의고사 시험지 빌더")
-st.markdown("여러 개의 지문을 입력하여 한 세트의 모의고사 시험지를 만들어보세요!")
+st.markdown("여러 개의 지문을 입력하여 한 세트의 모의고사 시험지를 만들어보세요! ⚡ (유료 API 키 가동 중)")
 
 # 지문 개수 설정
 num_questions = st.number_input("📚 출제할 문항(지문) 개수를 선택하세요", min_value=1, max_value=20, value=2)
@@ -221,17 +220,15 @@ for i in range(num_questions):
 st.divider()
 
 # 출제 버튼 및 결과 화면
-if st.button("🚀 시험지 전체 출제 시작", type="primary"):
+if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
     # 입력 검증
     empty_passages = [i+1 for i, q in enumerate(questions_data) if not q['passage'].strip()]
     if empty_passages:
         st.warning(f"⚠️ 문항 {', '.join(map(str, empty_passages))}의 지문이 비어있습니다. 지문을 모두 입력해주세요!")
     else:
-        # 프로그레스 바 및 상태 표시
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # 결과를 저장할 리스트 미리 생성 (순서 보장을 위해)
         all_results = [None] * num_questions
         
         def process_question(idx, q_data):
@@ -240,11 +237,11 @@ if st.button("🚀 시험지 전체 출제 시작", type="primary"):
             return idx, parsed_result
 
         try:
-            status_text.text(f"총 {num_questions}문항을 병렬 분석 및 출제 중입니다. 잠시만 기다려주세요...")
+            status_text.text(f"총 {num_questions}문항을 동시에 초고속 분석 및 출제 중입니다. 잠시만 기다려주세요... ⚡")
             completed = 0
             
-            # 구글 서버 과부하를 막기 위해 max_workers를 3으로 제한 (최대 3개씩만 동시 요청)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 3)) as executor:
+            # 유료 키를 사용 중이시므로 max_workers를 넉넉하게 할당하여 병렬 처리 속도를 극대화합니다.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 10)) as executor:
                 # 모든 문항 출제 작업을 동시에 스레드풀에 예약
                 futures = {executor.submit(process_question, i, q): i for i, q in enumerate(questions_data)}
                 
@@ -256,7 +253,7 @@ if st.button("🚀 시험지 전체 출제 시작", type="primary"):
                     progress_bar.progress(completed / num_questions)
                 
             status_text.text("🎉 시험지 제작이 완료되었습니다!")
-            st.success(f"총 {num_questions}문항 출제가 완료되었습니다!")
+            st.success(f"총 {num_questions}문항 초고속 출제가 완료되었습니다!")
             
             # 탭 분리
             tab1, tab2, tab3 = st.tabs(["💡 생성된 문제 확인 (웹 뷰)", "🖨️ 시험지 인쇄 (2단 편집)", "🖨️ 해설지 인쇄"])
