@@ -53,7 +53,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     
     # 모델 이름을 현재 확실하게 지원되는 gemini-2.5-flash-preview-09-2025 로 변경합니다.
     response = client.models.generate_content(
-        model='gemini-2.5-flash-preview-09-2025',
+        model="gemini-2.5-pro",
         contents=[MASTER_PROMPT, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
