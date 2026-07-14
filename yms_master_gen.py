@@ -103,12 +103,24 @@ if st.button("🚀 문제 출제 시작", type="primary"):
                 
                 # 결과 UI 예쁘게 배치
                 st.subheader("💡 생성된 문제")
-                st.markdown(f"**Q. {parsed_result['question_text']}**")
                 
-                st.info(parsed_result['passage'])
+                # 1. 문제 발문 출력
+                st.markdown(f"**{parsed_result['question_text']}**")
+                st.write("") # 빈 줄
                 
-                for i, opt in enumerate(parsed_result['options'], 1):
-                    st.markdown(f"①②③④⑤[{i-1}] {opt}" if i <= 5 else f"**{i}**. {opt}") # 간단한 번호 포매팅
+                # 2. 실제 모의고사 시험지 느낌의 지문 박스 디자인 적용 (HTML/CSS)
+                passage_html = parsed_result['passage'].replace('\n', '<br>')
+                st.markdown(f"""
+                <div style="border: 1.5px solid #000; padding: 25px; margin-bottom: 20px; font-family: 'Times New Roman', Batang, serif; font-size: 17px; line-height: 1.8; background-color: #ffffff; color: #000000; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);">
+                    {passage_html}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 3. 보기 출력 (①, ②, ③, ④, ⑤ 정상 포맷팅)
+                circle_nums = ["①", "②", "③", "④", "⑤"]
+                for i, opt in enumerate(parsed_result['options']):
+                    num = circle_nums[i] if i < 5 else f"{i+1}."
+                    st.markdown(f"<span style='font-size: 16px;'>{num} {opt}</span>", unsafe_allow_html=True)
                 
                 st.write("") # 빈 줄
                 
