@@ -344,27 +344,29 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                 <html>
                 <head>
                 <meta charset="utf-8">
-                  <style>
+                 <style>
+                    /* 브라우저 기본 헤더/푸터 강제 숨김 */
+                    @page {{ margin: 0; }} 
                     body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
                     .paper {{ 
                         background-color: white; color: black; 
                         width: 210mm; min-height: 297mm; 
-                        padding: 10mm 15mm; margin: 0 auto; /* 상단 여백 15mm -> 10mm로 축소 */
+                        padding: 15mm 20px; margin: 0 auto; 
                         box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
                         box-sizing: border-box;
                         font-family: 'Times New Roman', 'Noto Serif KR', Batang, serif;
                     }}
                     .header {{
                         border-bottom: 2.5px solid black;
-                        padding-bottom: 12px;
-                        margin-bottom: 30px;
-                        text-align: left; /* 왼쪽 정렬 */
-                        position: relative;
+                        padding-bottom: 10px;
+                        margin-bottom: 25px;
+                        display: flex;       /* 가로 배치 시작 */
+                        justify-content: space-between; /* 양 끝 정렬 */
+                        align-items: baseline;
                         column-span: all;
                     }}
-                    .exam-title {{ font-size: 20pt; font-weight: 900; letter-spacing: 2px; }}
-                    .info-box {{ position: absolute; right: 0; top: 0; font-size: 11pt; font-weight: 700; text-align: left; }}
-                                    
+                    .exam-title {{ font-size: 20pt; font-weight: 900; }}
+                    .info-box {{ font-size: 11pt; font-weight: 700; display: flex; gap: 20px; }}
                     /* 2단 편집 */
                     .content-columns {{
                         column-count: 2;
@@ -415,13 +417,15 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                     <div class="paper">
                         <div class="header">
                             <div class="exam-title">YMS 부송관 모의고사</div>
-                            <div class="info-box">이름 : ____________<br>교재 : ____________</div>
+                            <div class="info-box">
+                                <span>이름 : ____________</span>
+                                <span>교재 : ____________</span>
+                            </div>
                         </div>
                         
                         <div class="content-columns">
                             {all_questions_html}
                         </div>
-                        
                         <div class="footer">- 1 -</div>
                     </div>
                 </body>
