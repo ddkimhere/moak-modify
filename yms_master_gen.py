@@ -346,22 +346,23 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                 <meta charset="utf-8">
                  <style>
                     /* 브라우저 기본 헤더/푸터 강제 숨김 */
-                    @page {{ margin: 0; }} 
+                    @page {{ margin: 1cm; }} /* 인쇄 시 종이 자체의 여백 설정 */
                     body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
                     .paper {{ 
                         background-color: white; color: black; 
                         width: 210mm; min-height: 297mm; 
-                        padding: 15mm 20px; margin: 0 auto; 
+                        padding: 1cm; /* 여기서 상하좌우 1cm 여백을 확실히 적용 */
+                        margin: 0 auto; 
                         box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
-                        box-sizing: border-box;
+                        box-sizing: border-box; /* 패딩이 전체 크기를 넘지 않게 함 */
                         font-family: 'Times New Roman', 'Noto Serif KR', Batang, serif;
                     }}
                     .header {{
                         border-bottom: 2.5px solid black;
                         padding-bottom: 10px;
                         margin-bottom: 25px;
-                        display: flex;       /* 가로 배치 시작 */
-                        justify-content: space-between; /* 양 끝 정렬 */
+                        display: flex;
+                        justify-content: space-between;
                         align-items: baseline;
                         column-span: all;
                     }}
