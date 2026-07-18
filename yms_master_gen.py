@@ -3,6 +3,7 @@ import json
 import time
 import concurrent.futures
 import streamlit as st
+from datetime import datetime
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -13,20 +14,20 @@ client = genai.Client(api_key=api_key)
 
 # 2. 결과물 출력 형식 정의 (JSON 구조 강제화)
 class QuestionResponse(BaseModel):
-    question_type: str = Field(description="문제 유형 (예: 빈칸추론, 서술형(단어배열))")
-    difficulty: str = Field(description="난이도 (쉬움/보통/어려움)")
-    question_text: str = Field(description="학생에게 주어지는 발문 (예: 다음 빈칸에 들어갈 말로 가장 적절한 것은?, 또는 우리말에 맞게 배열하시오)")
-    passage: str = Field(description="지문 원문 (빈칸 추론의 경우 빈칸이 뚫려 있어야 함)")
-    is_subjective: bool = Field(description="이 문제가 서술형인지 여부 (True/False)")
-    options: list[str] = Field(description="객관식인 경우 1~5번 보기 리스트. 서술형이면 빈 리스트([])로 둔다.")
-    correct_answer: str = Field(description="객관식은 정답 번호(예: '3'), 서술형은 완성된 영작 문장")
-    sa_korean_meaning: str = Field(description="[서술형 전용] 영작해야 할 문장의 우리말 해석 (객관식이면 빈 문자열)")
-    sa_given_words: list[str] = Field(description="[서술형 전용] 무작위로 섞인 영어 단어 리스트 (객관식이면 빈 리스트)")
+    question_type: str = Field(description="문제 유형")
+    difficulty: str = Field(description="난이도")
+    question_text: str = Field(description="학생에게 주어지는 발문")
+    passage: str = Field(description="지문 원문")
+    is_subjective: bool = Field(description="서술형 여부")
+    options: list[str] = Field(description="객관식 보기")
+    correct_answer: str = Field(description="정답")
+    sa_korean_meaning: str = Field(description="우리말 해석")
+    sa_given_words: list[str] = Field(description="섞인 단어")
     intent: str = Field(description="출제 의도")
-    text_evidence: str = Field(description="본문 내 정답의 근거 문장")
-    explanation: str = Field(description="정답에 대한 상세한 해설")
-    distractor_analysis: str = Field(description="오답 분석 또는 서술형 채점 기준")
-    common_mistakes: str = Field(description="학생들이 자주 하는 실수 포인트")
+    text_evidence: str = Field(description="근거 문장")
+    explanation: str = Field(description="해설")
+    distractor_analysis: str = Field(description="오답 분석")
+    common_mistakes: str = Field(description="자주 하는 실수")
 
 # 3. 마스터 프롬프트 설정
 MASTER_PROMPT = """
@@ -302,6 +303,7 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
             # TAB 2: 시험지 출력 (2단 편집, CSS 적용)
             # ==========================================
             with tab2:
+                today = datetime.now().strftime("%Y년 %m월 %d일")
                 st.info("💡 아래 [출력하기] 버튼을 누르면 실제 모의고사 양식(2단)으로 깔끔하게 인쇄할 수 있습니다.")
                 
                 exam_html_blocks = []
@@ -337,7 +339,14 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                     """
                     exam_html_blocks.append(block)
                 
-                all_questions_html = "".join(exam_html_blocks)
+               all_questions_html = ""
+               for i, q in enumerate(questions):
+                   all_questions_html += f"""
+                   <div class="question-block">
+                        <p><strong>{i+1}.</strong> {q.get('question_text')}</p>
+                        {"<br>".join([f"&nbsp;&nbsp;{opt}" for opt in q.get('options', [])])}
+                </div>
+                """
                 
                 print_html = f"""
                 <!DOCTYPE html>
@@ -348,15 +357,27 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
                 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet">
                 <style>
-                    body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
-                    .paper {{ 
-                        background-color: white; color: black; 
-                        width: 210mm; min-height: 297mm; 
-                        padding: 15mm 20mm; margin: 0 auto; 
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
-                        box-sizing: border-box;
-                        font-family: 'Times New Roman', 'Noto Serif KR', Batang, serif;
-                    }}
+                     body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
+            .paper {{ 
+                background-color: white; color: black; 
+                width: 210mm; min-height: 297mm; 
+                padding: 15mm 20mm; margin: 0 auto; 
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                box-sizing: border-box; font-family: 'Times New Roman', serif;
+            }}
+            /* 이름과 날짜 헤더 */
+            .student-info {{ 
+                border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px;
+                display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;
+            }}
+            .content-columns {{ column-count: 2; column-gap: 15mm; }}
+            .question-block {{ break-inside: avoid; margin-bottom: 20px; }}
+            
+            @media print {{
+                body {{ background-color: white; padding: 0; }}
+                .paper {{ box-shadow: none; width: 100%; padding: 10mm; }}
+                .print-btn {{ display: none; }}
+            }}
                     /* 수능/모의고사 스타일 헤더 */
                     .header {{
                         border-bottom: 2.5px solid black;
@@ -420,19 +441,18 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                 </style>
                 </head>
                 <body>
-                    <button class="print-btn" onclick="window.print()">🖨️ 시험지 출력하기</button>
-                    <div class="paper">
-                        <div class="header">
-                            <div class="exam-title">YMS 부송관 모의고사</div>
-                            <div class="grade">학년 : ____________<br>교재 : ____________</div>
-                        </div>
-                        
-                        <div class="content-columns">
-                            {all_questions_html}
-                        </div>
-                        
-                        <div class="footer">- 1 -</div>
-                    </div>
+                    <div style="text-align:center; margin-bottom: 20px;">
+                <button class="print-btn" onclick="window.print()" style="padding: 10px 20px; cursor:pointer;">🖨️ 시험지 출력하기</button>
+            </div>
+            <div class="paper">
+                <div class="student-info">
+                    <span>날짜: {today}</span>
+                    <span>성명: <input type="text" style="border:none; border-bottom:1px solid #000; width:150px; font-size:16px; font-family:inherit; outline:none;"></span>
+                </div>
+                <div class="content-columns">
+                    {all_questions_html}
+                </div>
+            </div>
                 </body>
                 </html>
                 """
