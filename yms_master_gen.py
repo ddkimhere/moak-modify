@@ -355,16 +355,16 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                         font-family: 'Times New Roman', 'Noto Serif KR', Batang, serif;
                     }}
                     .header {{
-                        border-bottom: 2px solid black;
-                        padding-bottom: 5px;
-                        margin-bottom: 15px; /* 헤더와 첫 문제 사이 간격 축소 */
-                        text-align: center;
+                        border-bottom: 2.5px solid black;
+                        padding-bottom: 12px;
+                        margin-bottom: 30px;
+                        text-align: left; /* 왼쪽 정렬 */
                         position: relative;
                         column-span: all;
                     }}
-                    .grade {{ position: absolute; right: 0; top: 0; font-size: 10pt; font-weight: 700; text-align: left;}}
-                    .exam-title {{ font-size: 18pt; font-weight: 900; }}
-                    
+                    .exam-title {{ font-size: 20pt; font-weight: 900; letter-spacing: 2px; }}
+                    .info-box {{ position: absolute; right: 0; top: 0; font-size: 11pt; font-weight: 700; text-align: left; }}
+                                    
                     /* 2단 편집 */
                     .content-columns {{
                         column-count: 2;
@@ -415,7 +415,7 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                     <div class="paper">
                         <div class="header">
                             <div class="exam-title">YMS 부송관 모의고사</div>
-                            <div class="grade">학년 : ____________<br>교재 : ____________</div>
+                            <div class="info-box">이름 : ____________<br>교재 : ____________</div>
                         </div>
                         
                         <div class="content-columns">
