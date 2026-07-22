@@ -168,7 +168,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.5-flash',
                 contents=[MASTER_PROMPT, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
