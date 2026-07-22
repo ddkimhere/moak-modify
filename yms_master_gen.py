@@ -167,9 +167,8 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            # 선생님의 요청에 따라 gemini-3.5-flash 모델로 고정합니다.
             response = client.models.generate_content(
-                model='gemini-3.5-flash',
+                model='gemini-2.5-flash',
                 contents=[MASTER_PROMPT, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -181,10 +180,9 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
             
         except Exception as e:
             error_msg = str(e).upper()
-            # 503(서버 자체 오류) 등의 경우에만 잠깐 쉬었다가 재시도합니다.
             if "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg or "QUOTA" in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2  # 유료키 환경이므로 대기 시간을 조금 더 짧게 가져갑니다.
+                    wait_time = (attempt + 1) * 2 
                     time.sleep(wait_time)
                     continue
             raise e
@@ -194,6 +192,9 @@ st.set_page_config(page_title="AI 모의고사 출제 엔진", page_icon="🏫",
 
 st.title("🏫 AI 모의고사 시험지 빌더")
 st.markdown("여러 개의 지문을 입력하여 한 세트의 모의고사 시험지를 만들어보세요! ⚡ (유료 API 키 가동 중)")
+
+# 교재 이름 입력 필드 추가
+textbook_name = st.text_input("📖 교재 이름을 입력하세요 (예: 2026 수능특강 영어)", value="2026 수능특강 영어")
 
 # 지문 개수 설정
 num_questions = st.number_input("📚 출제할 문항(지문) 개수를 선택하세요", min_value=1, max_value=20, value=2)
@@ -221,7 +222,6 @@ st.divider()
 
 # 출제 버튼 및 결과 화면
 if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
-    # 입력 검증
     empty_passages = [i+1 for i, q in enumerate(questions_data) if not q['passage'].strip()]
     if empty_passages:
         st.warning(f"⚠️ 문항 {', '.join(map(str, empty_passages))}의 지문이 비어있습니다. 지문을 모두 입력해주세요!")
@@ -232,7 +232,6 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
         all_results = [None] * num_questions
         
         def process_question(idx, q_data):
-            """개별 문항을 처리하는 보조 함수"""
             parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'])
             return idx, parsed_result
 
@@ -240,12 +239,9 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
             status_text.text(f"총 {num_questions}문항을 동시에 초고속 분석 및 출제 중입니다. 잠시만 기다려주세요... ⚡")
             completed = 0
             
-            # 유료 키를 사용 중이시므로 max_workers를 넉넉하게 할당하여 병렬 처리 속도를 극대화합니다.
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 10)) as executor:
-                # 모든 문항 출제 작업을 동시에 스레드풀에 예약
                 futures = {executor.submit(process_question, i, q): i for i, q in enumerate(questions_data)}
                 
-                # 먼저 끝나는 작업부터 순차적으로 프로그레스 바 업데이트
                 for future in concurrent.futures.as_completed(futures):
                     idx, parsed_result = future.result()
                     all_results[idx] = parsed_result
@@ -255,7 +251,6 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
             status_text.text("🎉 시험지 제작이 완료되었습니다!")
             st.success(f"총 {num_questions}문항 초고속 출제가 완료되었습니다!")
             
-            # 탭 분리
             tab1, tab2, tab3 = st.tabs(["💡 생성된 문제 확인 (웹 뷰)", "🖨️ 시험지 인쇄 (2단 편집)", "🖨️ 해설지 인쇄"])
             circle_nums = ["①", "②", "③", "④", "⑤"]
             
@@ -345,16 +340,15 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                 <head>
                 <meta charset="utf-8">
                  <style>
-                    /* 브라우저 기본 헤더/푸터 강제 숨김 */
-                    @page {{ margin: 1cm; }} /* 인쇄 시 종이 자체의 여백 설정 */
+                    @page {{ margin: 1cm; }}
                     body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
                     .paper {{ 
                         background-color: white; color: black; 
                         width: 210mm; min-height: 297mm; 
-                        padding: 1cm; /* 여기서 상하좌우 1cm 여백을 확실히 적용 */
+                        padding: 1cm; 
                         margin: 0 auto; 
                         box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
-                        box-sizing: border-box; /* 패딩이 전체 크기를 넘지 않게 함 */
+                        box-sizing: border-box; 
                         font-family: 'Times New Roman', 'Noto Serif KR', Batang, serif;
                     }}
                     .header {{
@@ -368,19 +362,16 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                     }}
                     .exam-title {{ font-size: 20pt; font-weight: 900; }}
                     .info-box {{ font-size: 11pt; font-weight: 700; display: flex; gap: 20px; }}
-                    /* 2단 편집 */
                     .content-columns {{
                         column-count: 2;
                         column-gap: 10mm;
                         column-rule: 1px solid #ccc;
                     }}
-                    
                     .question-block {{
                         break-inside: avoid;
-                        margin-bottom: 20px; /* 문제 간 간격 조절 */
+                        margin-bottom: 20px;
                         width: 100%;
                     }}
-
                     .question-row {{ font-size: 11.5pt; font-weight: 700; margin-bottom: 15px; display: flex; align-items: flex-start; }}
                     .q-num {{ font-size: 13pt; margin-right: 6px; }}
                     .passage {{ 
@@ -392,20 +383,15 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                         text-align: justify; 
                         word-break: keep-all;
                     }}
-                    
                     .options {{ font-size: 10.5pt; line-height: 1.8; }}
                     .option-item {{ margin-bottom: 4px; display: flex; align-items: flex-start; }}
                     .opt-num {{ margin-right: 8px; }}
-
-                    /* 서술형 전용 CSS */
                     .sa-box {{ border: 1.5px solid #000; padding: 15px; margin: 15px 0; text-align: center; font-size: 11pt; font-weight: bold; line-height: 1.8; }}
                     .sa-meaning {{ font-size: 10.5pt; margin-bottom: 10px; }}
                     .sa-answer-line {{ border-bottom: 1px solid #000; width: 100%; height: 30px; margin-top: 20px; }}
-
                     .footer {{ text-align: center; margin-top: 60px; font-size: 12pt; font-family: 'Noto Serif KR', Batang, serif; column-span: all; }}
                     .print-btn {{ display: block; margin: 0 auto 20px auto; padding: 12px 30px; font-size: 16px; font-weight: bold; color: white; background-color: #ff4b4b; border: none; border-radius: 5px; cursor: pointer; }}
                     .print-btn:hover {{ background-color: #ff3333; }}
-                    
                     @media print {{
                         body {{ background-color: white; padding: 0; }}
                         .paper {{ box-shadow: none; width: 100%; padding: 0; margin: 0; border: none; }}
@@ -419,8 +405,8 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                         <div class="header">
                             <div class="exam-title">YMS 부송관 모의고사</div>
                             <div class="info-box">
+                                <span>교재 : {textbook_name}</span>
                                 <span>이름 : ____________</span>
-                                <span>교재 : ____________</span>
                             </div>
                         </div>
                         
@@ -487,6 +473,7 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                     .header {{ border-bottom: 2.5px solid black; padding-bottom: 12px; margin-bottom: 30px; text-align: center; font-family: 'Noto Serif KR', Batang, serif; }}
                     .exam-title {{ font-size: 20pt; font-weight: 900; letter-spacing: 5px; }}
                     .subject {{ font-size: 16pt; font-weight: 700; margin-top: 8px; color: #555; }}
+                    .textbook-sub {{ font-size: 12pt; font-weight: 600; margin-top: 5px; color: #0056b3; }}
                     .section-title {{ font-weight: bold; font-size: 12.5pt; margin-top: 25px; margin-bottom: 10px; border-left: 5px solid #0056b3; padding-left: 10px; color: #0056b3; }}
                     .content-box {{ padding-left: 15px; text-align: justify; word-break: keep-all; margin-bottom: 10px; }}
                     .print-btn {{ display: block; margin: 0 auto 20px auto; padding: 12px 30px; font-size: 16px; font-weight: bold; color: white; background-color: #0056b3; border: none; border-radius: 5px; cursor: pointer; }}
@@ -504,6 +491,7 @@ if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
                         <div class="header">
                             <div class="exam-title">YMS 부송관 모의고사</div>
                             <div class="subject">정답 및 해설</div>
+                            <div class="textbook-sub">[{textbook_name}]</div>
                         </div>
                         {all_answers_html}
                     </div>
