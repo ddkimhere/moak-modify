@@ -157,13 +157,52 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 최종 결과물은 실제 고등학교 중간·기말고사에 바로 사용할 수 있는 수준의 완성도를 목표로 단다.
 """
 
-def generate_exam_questions(passage: str, request_specs: list[dict]):
+OBJECTIVE_TYPES = {
+    "빈칸추론", "주제", "제목", "요지", "어법", "어휘",
+    "문장삽입", "순서배열", "내용일치"
+}
+
+ANSWER_CYCLES = [
+    [3, 1, 5, 2, 4],
+    [2, 5, 1, 4, 3],
+    [5, 2, 4, 1, 3],
+    [1, 4, 2, 5, 3],
+    [4, 1, 3, 5, 2],
+]
+
+def build_balanced_answer_numbers(count: int) -> list[int]:
+    """객관식 정답 1~5가 시험 전체에서 최대한 균등하게 섞이도록 번호 계획을 만듭니다."""
+    numbers = []
+    cycle_idx = 0
+    while len(numbers) < count:
+        numbers.extend(ANSWER_CYCLES[cycle_idx % len(ANSWER_CYCLES)])
+        cycle_idx += 1
+    return numbers[:count]
+
+def normalize_answer_number(value) -> str:
+    """'3', '③', '정답: 3' 같은 값을 1~5 문자열로 정규화합니다."""
+    text_value = str(value).strip()
+    circled = {"①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5"}
+    for symbol, number in circled.items():
+        if symbol in text_value:
+            return number
+    match = re.search(r"[1-5]", text_value)
+    return match.group(0) if match else ""
+
+def generate_exam_questions(passage: str, question_plan: list[dict]):
     """한 지문에서 요청한 여러 유형의 문제를 Gemini API 한 번으로 묶어 생성합니다."""
-    total_questions = sum(spec["count"] for spec in request_specs)
-    request_lines = "\n".join(
-        f"- {spec['type']}: {spec['count']}문제 / 난이도 {spec['difficulty']}"
-        for spec in request_specs
-    )
+    total_questions = len(question_plan)
+    request_line_items = []
+    for idx, item in enumerate(question_plan, start=1):
+        if item.get("target_answer"):
+            request_line_items.append(
+                f"- {idx}번: {item['type']} / 난이도 {item['difficulty']} / 객관식 정답 번호는 반드시 {item['target_answer']}번"
+            )
+        else:
+            request_line_items.append(
+                f"- {idx}번: {item['type']} / 난이도 {item['difficulty']} / 서술형"
+            )
+    request_lines = "\n".join(request_line_items)
 
     prompt = f"""
     아래 제공된 [원문 지문]을 철저히 분석한 뒤, [요청 문제 구성]에 지정된 유형과 개수를 정확히 맞춰
@@ -182,8 +221,10 @@ def generate_exam_questions(passage: str, request_specs: list[dict]):
     7. 문장삽입 문제는 passage의 첫 줄에 반드시 '[주어진 문장] 실제 문장'을 넣고, 한 줄을 비운 뒤 본문을 제시한다. 본문에는 삽입 후보 위치 ①~⑤를 자연스럽게 표시한다.
     8. 어법 문제와 어휘/문맥상 낱말 문제는 passage 안의 ①~⑤ 핵심 단어 또는 어구를 반드시 <u>①표현</u>처럼 HTML 밑줄 태그로 표시한다. 번호만 있고 표현에 밑줄이 없는 형태는 금지한다.
     9. 객관식 보기는 실제 선택지가 필요한 유형에만 작성한다. 문장삽입처럼 본문 속 ①~⑤ 위치 자체가 선택지인 경우 options는 빈 리스트로 둔다.
-    10. 원문 지문은 필요 유형(빈칸/어법 등)의 문제 제시에 필요한 범위 외에는 임의로 재작성하지 않는다.
-    11. 반드시 최종 자가 검토 후 JSON의 questions 배열에 문제들을 담아 반환한다.
+    10. [요청 문제 구성]에 객관식 정답 번호가 지정되어 있으면 그 번호를 반드시 정답이 되도록 문제와 보기/표시 위치를 설계한다. 정답 번호를 임의로 변경하지 않는다.
+    11. questions 배열의 순서는 [요청 문제 구성]의 1번, 2번, 3번... 순서를 정확히 따른다.
+    12. 원문 지문은 필요 유형(빈칸/어법 등)의 문제 제시에 필요한 범위 외에는 임의로 재작성하지 않는다.
+    13. 반드시 최종 자가 검토 후 JSON의 questions 배열에 문제들을 담아 반환한다.
 
     [원문 지문]
     {passage}
@@ -204,16 +245,33 @@ def generate_exam_questions(passage: str, request_specs: list[dict]):
                 ),
             )
             parsed = json.loads(response.text)
-            questions = parsed.get("questions", [])
-            return questions[:total_questions]
+            questions = parsed.get("questions", [])[:total_questions]
+            if len(questions) != total_questions:
+                raise ValueError(f"요청한 {total_questions}문항 중 {len(questions)}문항만 생성되었습니다.")
+
+            mismatches = []
+            for idx, (expected, actual) in enumerate(zip(question_plan, questions), start=1):
+                target = expected.get("target_answer")
+                if target and normalize_answer_number(actual.get("correct_answer", "")) != str(target):
+                    mismatches.append(
+                        f"{idx}번 목표 {target} / 실제 {actual.get('correct_answer', '')}"
+                    )
+            if mismatches:
+                raise ValueError("정답 번호 배치 불일치: " + "; ".join(mismatches))
+
+            return questions
 
         except Exception as e:
             error_msg = str(e).upper()
-            if "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg or "QUOTA" in error_msg:
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2
-                    time.sleep(wait_time)
-                    continue
+            retryable = (
+                "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg
+                or "QUOTA" in error_msg or "정답 번호 배치 불일치" in str(e)
+                or "문항만 생성되었습니다" in str(e)
+            )
+            if retryable and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                time.sleep(wait_time)
+                continue
             raise e
 
 # 4. Streamlit 웹 앱 UI 구성
@@ -314,8 +372,32 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
         all_batches = [None] * num_passages
         total_requested = sum(q["total"] for q in questions_data)
 
+        objective_count = sum(
+            spec["count"]
+            for q in questions_data
+            for spec in q["specs"]
+            if spec["type"] in OBJECTIVE_TYPES
+        )
+        answer_numbers = build_balanced_answer_numbers(objective_count)
+        answer_cursor = 0
+
+        for q_data in questions_data:
+            question_plan = []
+            for spec in q_data["specs"]:
+                for _ in range(spec["count"]):
+                    target_answer = None
+                    if spec["type"] in OBJECTIVE_TYPES:
+                        target_answer = answer_numbers[answer_cursor]
+                        answer_cursor += 1
+                    question_plan.append({
+                        "type": spec["type"],
+                        "difficulty": spec["difficulty"],
+                        "target_answer": target_answer,
+                    })
+            q_data["question_plan"] = question_plan
+
         def process_passage(idx, q_data):
-            parsed_results = generate_exam_questions(q_data["passage"], q_data["specs"])
+            parsed_results = generate_exam_questions(q_data["passage"], q_data["question_plan"])
             return idx, parsed_results
 
         try:
@@ -347,6 +429,18 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                 f"총 {len(all_results)}문항 출제가 완료되었습니다. "
                 f"Gemini API 호출은 최대 {num_passages}회(지문당 1회)입니다."
             )
+
+            answer_counts = {str(i): 0 for i in range(1, 6)}
+            for result in all_results:
+                if not result.get("is_subjective"):
+                    answer_no = normalize_answer_number(result.get("correct_answer", ""))
+                    if answer_no in answer_counts:
+                        answer_counts[answer_no] += 1
+            if sum(answer_counts.values()):
+                st.caption(
+                    "정답 분포  "
+                    + "  |  ".join(f"{num}번 {answer_counts[str(num)]}개" for num in range(1, 6))
+                )
 
             tab1, tab2, tab3 = st.tabs(["💡 생성된 문제 확인 (웹 뷰)", "🖨️ 시험지 인쇄 (2단 편집)", "🖨️ 해설지 인쇄"])
             circle_nums = ["①", "②", "③", "④", "⑤"]
@@ -460,7 +554,7 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                 <head>
                 <meta charset="utf-8">
                  <style>
-                    @page {{ margin: 1cm; }}
+                    @page {{ margin: 1cm; @bottom-center {{ content: "- " counter(page) " -"; font-size: 10pt; }} }}
                     body {{ background-color: #f0f2f6; margin: 0; padding: 20px; }}
                     .paper {{ 
                         background-color: white; color: black; 
@@ -541,7 +635,6 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                         <div class="content-columns">
                             {all_questions_html}
                         </div>
-                        <div class="footer">- 1 -</div>
                     </div>
                 </body>
                 </html>
