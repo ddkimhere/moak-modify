@@ -179,8 +179,11 @@ def generate_exam_questions(passage: str, request_specs: list[dict]):
     4. 객관식 정답 번호가 한 번호에 편중되지 않도록 전체 세트에서 분산한다.
     5. 각 문항은 독립적으로 풀 수 있어야 하며 정답은 반드시 하나여야 한다.
     6. 서술형(단어배열)은 기존 서술형 규칙을 그대로 따른다.
-    7. 원문 지문은 필요 유형(빈칸/어법 등)의 문제 제시에 필요한 범위 외에는 임의로 재작성하지 않는다.
-    8. 반드시 최종 자가 검토 후 JSON의 questions 배열에 문제들을 담아 반환한다.
+    7. 문장삽입 문제는 passage의 첫 줄에 반드시 '[주어진 문장] 실제 문장'을 넣고, 한 줄을 비운 뒤 본문을 제시한다. 본문에는 삽입 후보 위치 ①~⑤를 자연스럽게 표시한다.
+    8. 어법 문제와 어휘/문맥상 낱말 문제는 passage 안의 ①~⑤ 핵심 단어 또는 어구를 반드시 <u>①표현</u>처럼 HTML 밑줄 태그로 표시한다. 번호만 있고 표현에 밑줄이 없는 형태는 금지한다.
+    9. 객관식 보기는 실제 선택지가 필요한 유형에만 작성한다. 문장삽입처럼 본문 속 ①~⑤ 위치 자체가 선택지인 경우 options는 빈 리스트로 둔다.
+    10. 원문 지문은 필요 유형(빈칸/어법 등)의 문제 제시에 필요한 범위 외에는 임의로 재작성하지 않는다.
+    11. 반드시 최종 자가 검토 후 JSON의 questions 배열에 문제들을 담아 반환한다.
 
     [원문 지문]
     {passage}
@@ -230,7 +233,7 @@ QUESTION_TYPES = [
     "문장삽입", "순서배열", "내용일치", "서술형(단어배열)"
 ]
 
-st.info("💡 지문 하나에서 여러 문제 유형을 선택하면, 해당 지문은 Gemini API를 딱 1번 호출해 최대 10문제를 한꺼번에 생성합니다.")
+st.info("💡 지문 하나에서 여러 문제 유형을 선택하면, 해당 지문은 Gemini API를 딱 1번 호출해 최대 10문제를 한꺼번에 생성합니다. 각 유형의 문항 수와 난이도를 따로 지정할 수 있습니다.")
 st.divider()
 
 # 지문별 배치 출제 설정
@@ -239,39 +242,43 @@ for i in range(num_passages):
     st.markdown(f"### 📄 지문 {i+1} 세팅")
     passage = st.text_area(f"지문 {i+1}", height=170, key=f"passage_{i}")
 
-    col_type, col_diff = st.columns([7, 3])
-    with col_type:
-        selected_types = st.multiselect(
-            f"생성할 문제 유형 {i+1}",
-            QUESTION_TYPES,
-            default=["빈칸추론"],
-            key=f"types_{i}",
-            help="여러 유형을 동시에 선택할 수 있습니다. 유형별 문항 수의 합은 지문당 최대 10문제입니다.",
-        )
-    with col_diff:
-        q_diff = st.selectbox(
-            f"공통 난이도 {i+1}",
-            ["보통", "쉬움", "어려움"],
-            key=f"diff_{i}",
-        )
+    selected_types = st.multiselect(
+        f"생성할 문제 유형 {i+1}",
+        QUESTION_TYPES,
+        default=["빈칸추론"],
+        key=f"types_{i}",
+        help="여러 유형을 동시에 선택할 수 있습니다. 유형별 문항 수의 합은 지문당 최대 10문제입니다.",
+    )
 
     type_counts = {}
+    type_difficulties = {}
     if selected_types:
-        st.caption("유형별 생성 문항 수")
-        count_cols = st.columns(min(4, len(selected_types)))
-        for type_idx, q_type in enumerate(selected_types):
-            with count_cols[type_idx % len(count_cols)]:
+        st.caption("유형별 문항 수 / 난이도")
+        for q_type in selected_types:
+            col_name, col_count, col_diff = st.columns([4, 2, 2])
+            with col_name:
+                st.markdown(f"**{q_type}**")
+            with col_count:
                 type_counts[q_type] = st.number_input(
-                    q_type,
+                    f"{q_type} 문항 수",
                     min_value=1,
                     max_value=5,
                     value=1,
                     step=1,
                     key=f"count_{i}_{q_type}",
+                    label_visibility="collapsed",
+                )
+            with col_diff:
+                type_difficulties[q_type] = st.selectbox(
+                    f"{q_type} 난이도",
+                    ["보통", "쉬움", "어려움"],
+                    index=0,
+                    key=f"diff_{i}_{q_type}",
+                    label_visibility="collapsed",
                 )
 
     specs = [
-        {"type": q_type, "count": int(type_counts[q_type]), "difficulty": q_diff}
+        {"type": q_type, "count": int(type_counts[q_type]), "difficulty": type_difficulties[q_type]}
         for q_type in selected_types
     ]
     total_for_passage = sum(spec["count"] for spec in specs)
@@ -352,7 +359,21 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                     st.subheader(f"💡 문항 {idx+1}")
                     st.markdown(f"**{idx+1}. {result['question_text']}**")
                     
-                    passage_html = result['passage'].replace('\n', '<br>')
+                    raw_passage = result['passage']
+                    given_sentence_html = ""
+                    body_text = raw_passage
+                    if raw_passage.startswith("[주어진 문장]"):
+                        first_line, _, remainder = raw_passage.partition("\n")
+                        given_sentence = first_line.replace("[주어진 문장]", "", 1).strip()
+                        body_text = remainder.lstrip()
+                        given_sentence_html = f"""
+                        <div style="border: 1.5px solid #555; padding: 14px 18px; margin: 10px 0 12px 0; background:#f7f7f7; font-family:'Times New Roman', Batang, serif; font-size:16px; line-height:1.7; color:#000;">
+                            <strong>[주어진 문장]</strong><br>{given_sentence}
+                        </div>
+                        """
+                    passage_html = body_text.replace('\n', '<br>')
+                    if given_sentence_html:
+                        st.markdown(given_sentence_html, unsafe_allow_html=True)
                     st.markdown(f"""
                     <div style="border: 1.5px solid #000; padding: 25px; margin-bottom: 20px; font-family: 'Times New Roman', Batang, serif; font-size: 17px; line-height: 1.8; background-color: #ffffff; color: #000000;">
                         {passage_html}
@@ -391,7 +412,15 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                 
                 exam_html_blocks = []
                 for idx, result in enumerate(all_results):
-                    passage_html = result['passage'].replace('\n', '<br>')
+                    raw_passage = result['passage']
+                    given_sentence_html = ""
+                    body_text = raw_passage
+                    if raw_passage.startswith("[주어진 문장]"):
+                        first_line, _, remainder = raw_passage.partition("\n")
+                        given_sentence = first_line.replace("[주어진 문장]", "", 1).strip()
+                        body_text = remainder.lstrip()
+                        given_sentence_html = f'<div class="given-sentence"><strong>[주어진 문장]</strong><br>{given_sentence}</div>'
+                    passage_html = body_text.replace('\n', '<br>')
                     
                     if result['is_subjective']:
                         options_html = f"""
@@ -416,6 +445,7 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                         <div class="question-row">
                             <span class="q-num">{idx+1}.</span> <span>{result['question_text']}</span>
                         </div>
+                        {given_sentence_html}
                         <div class="passage">{passage_html}</div>
                         <div class="options">{options_html}</div>
                     </div>
@@ -472,6 +502,14 @@ if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="prim
                         margin-bottom: 15px; 
                         text-align: justify; 
                         word-break: keep-all;
+                    }}
+                    .given-sentence {{
+                        border: 1.2px solid #555;
+                        padding: 10px 12px;
+                        margin: 0 0 10px 0;
+                        background: #f7f7f7;
+                        font-size: 10.5pt;
+                        line-height: 1.55;
                     }}
                     .options {{ font-size: 10.5pt; line-height: 1.8; }}
                     .option-item {{ margin-bottom: 4px; display: flex; align-items: flex-start; }}
