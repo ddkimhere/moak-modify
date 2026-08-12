@@ -160,8 +160,7 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 def generate_exam_questions(passage: str, request_specs: list[dict]):
     """한 지문에서 요청한 여러 유형의 문제를 Gemini API 한 번으로 묶어 생성합니다."""
     total_questions = sum(spec["count"] for spec in request_specs)
-    request_lines = "
-".join(
+    request_lines = "\n".join(
         f"- {spec['type']}: {spec['count']}문제 / 난이도 {spec['difficulty']}"
         for spec in request_specs
     )
