@@ -7,8 +7,10 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# 1. API 키 설정 (하드코딩 방식)
-api_key = "AQ.Ab8RN6KvtMi5trvzk5__MPYLg2xmsReIXQfgu0LANXc2vQ74xA"
+# 1. API 키 설정 (Streamlit Secrets)
+if "GEMINI_API_KEY" not in st.secrets:
+    raise RuntimeError("Streamlit Secrets에 GEMINI_API_KEY를 등록해주세요.")
+api_key = str(st.secrets["GEMINI_API_KEY"]).strip()
 client = genai.Client(api_key=api_key)
 
 # 2. 결과물 출력 형식 정의 (JSON 구조 강제화)
@@ -168,7 +170,7 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-3.5-flash',
+                model='gemini-3.1-flash-lite',
                 contents=[MASTER_PROMPT, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
