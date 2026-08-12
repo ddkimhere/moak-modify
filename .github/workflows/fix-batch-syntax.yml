@@ -1,0 +1,34 @@
+name: Fix Moak batch syntax
+
+on:
+  push:
+    branches:
+      - feat/batch-question-generation-20260813
+    paths:
+      - .github/workflows/fix-batch-syntax.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/batch-question-generation-20260813
+      - name: Fix escaped newline and validate Python
+        shell: bash
+        run: |
+          python -c "import base64;exec(base64.b64decode('ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnAgPSBQYXRoKCJ5bXNfbWFzdGVyX2dlbi5weSIpCnQgPSBwLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpicm9rZW4gPSAncmVxdWVzdF9saW5lcyA9ICJcbiIuam9pbignCmZpeGVkID0gJ3JlcXVlc3RfbGluZXMgPSAiXFxuIi5qb2luKCcKaWYgYnJva2VuIG5vdCBpbiB0OgogICAgcmFpc2UgU3lzdGVtRXhpdCgiYnJva2VuIHJlcXVlc3RfbGluZXMgcGF0dGVybiBub3QgZm91bmQiKQp0ID0gdC5yZXBsYWNlKGJyb2tlbiwgZml4ZWQsIDEpCnAud3JpdGVfdGV4dCh0LCBlbmNvZGluZz0idXRmLTgiKQo='))"
+          python -m py_compile yms_master_gen.py
+      - name: Remove one-time workflow
+        run: rm -f .github/workflows/fix-batch-syntax.yml
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add yms_master_gen.py .github/workflows/fix-batch-syntax.yml
+          git commit -m "Fix batch generation syntax and validate app"
+          git push origin HEAD:feat/batch-question-generation-20260813
