@@ -30,6 +30,9 @@ class QuestionResponse(BaseModel):
     distractor_analysis: str = Field(description="오답 분석 또는 서술형 채점 기준")
     common_mistakes: str = Field(description="학생들이 자주 하는 실수 포인트")
 
+class BatchQuestionResponse(BaseModel):
+    questions: list[QuestionResponse] = Field(description="요청한 유형과 개수에 맞춰 생성된 문제 목록")
+
 # 3. 마스터 프롬프트 설정
 MASTER_PROMPT = """
 AI 영어 내신 출제 시스템 (MASTER PROMPT)
@@ -154,19 +157,37 @@ AI 영어 내신 출제 시스템 (MASTER PROMPT)
 최종 결과물은 실제 고등학교 중간·기말고사에 바로 사용할 수 있는 수준의 완성도를 목표로 단다.
 """
 
-def generate_exam_question(passage: str, q_type: str, difficulty: str):
-    """
-    지문과 조건을 받아 Gemini API를 통해 한 문항의 변형 문제를 생성합니다.
-    """
+def generate_exam_questions(passage: str, request_specs: list[dict]):
+    """한 지문에서 요청한 여러 유형의 문제를 Gemini API 한 번으로 묶어 생성합니다."""
+    total_questions = sum(spec["count"] for spec in request_specs)
+    request_lines = "
+".join(
+        f"- {spec['type']}: {spec['count']}문제 / 난이도 {spec['difficulty']}"
+        for spec in request_specs
+    )
+
     prompt = f"""
-    아래 제공된 [원문 지문]을 철저히 분석한 뒤, '{q_type}' 유형의 문제를 '{difficulty}' 난이도로 딱 1문제만 출제하시오.
-    반드시 스스로 검토를 거친 후, 오류가 없는 최종 결과물만 JSON 형태로 반환하시오.
-    
+    아래 제공된 [원문 지문]을 철저히 분석한 뒤, [요청 문제 구성]에 지정된 유형과 개수를 정확히 맞춰
+    총 {total_questions}개의 학교 내신형 변형문제를 한 번에 출제하시오.
+
+    [요청 문제 구성]
+    {request_lines}
+
+    [배치 출제 추가 규칙]
+    1. 요청된 유형별 문항 수를 정확히 지킨다.
+    2. 같은 출제 포인트를 여러 문제에서 반복하지 않는다.
+    3. 가능하면 지문의 서로 다른 문장과 논리 구간을 고르게 활용한다.
+    4. 객관식 정답 번호가 한 번호에 편중되지 않도록 전체 세트에서 분산한다.
+    5. 각 문항은 독립적으로 풀 수 있어야 하며 정답은 반드시 하나여야 한다.
+    6. 서술형(단어배열)은 기존 서술형 규칙을 그대로 따른다.
+    7. 원문 지문은 필요 유형(빈칸/어법 등)의 문제 제시에 필요한 범위 외에는 임의로 재작성하지 않는다.
+    8. 반드시 최종 자가 검토 후 JSON의 questions 배열에 문제들을 담아 반환한다.
+
     [원문 지문]
     {passage}
     """
-    
-    max_retries = 5
+
+    max_retries = 3
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -174,17 +195,21 @@ def generate_exam_question(passage: str, q_type: str, difficulty: str):
                 contents=[MASTER_PROMPT, prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=QuestionResponse,
-                    temperature=0.2, 
+                    response_schema=BatchQuestionResponse,
+                    thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+                    max_output_tokens=32768,
+                    temperature=0.2,
                 ),
             )
-            return json.loads(response.text)
-            
+            parsed = json.loads(response.text)
+            questions = parsed.get("questions", [])
+            return questions[:total_questions]
+
         except Exception as e:
             error_msg = str(e).upper()
             if "503" in error_msg or "429" in error_msg or "UNAVAILABLE" in error_msg or "QUOTA" in error_msg:
                 if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2 
+                    wait_time = (attempt + 1) * 2
                     time.sleep(wait_time)
                     continue
             raise e
@@ -199,60 +224,124 @@ st.markdown("여러 개의 지문을 입력하여 한 세트의 모의고사 시
 textbook_name = st.text_input("📖 교재 이름을 입력하세요 (예: 2026 수능특강 영어)", value="2026 수능특강 영어")
 
 # 지문 개수 설정
-num_questions = st.number_input("📚 출제할 문항(지문) 개수를 선택하세요", min_value=1, max_value=20, value=2)
+num_passages = st.number_input("📚 입력할 지문 개수를 선택하세요", min_value=1, max_value=20, value=2)
 
+QUESTION_TYPES = [
+    "빈칸추론", "주제", "제목", "요지", "어법", "어휘",
+    "문장삽입", "순서배열", "내용일치", "서술형(단어배열)"
+]
+
+st.info("💡 지문 하나에서 여러 문제 유형을 선택하면, 해당 지문은 Gemini API를 딱 1번 호출해 최대 10문제를 한꺼번에 생성합니다.")
 st.divider()
 
-# 다중 지문 입력 폼 동적 생성
+# 지문별 배치 출제 설정
 questions_data = []
-for i in range(num_questions):
-    st.markdown(f"### 📝 문항 {i+1} 세팅")
-    col_q1, col_q2 = st.columns([7, 3])
-    with col_q1:
-        passage = st.text_area(f"지문 {i+1}", height=150, key=f"passage_{i}")
-    with col_q2:
-        q_type = st.selectbox(
-            f"유형 {i+1}", 
-            ["빈칸추론", "주제", "제목", "요지", "어법", "어휘", "문장삽입", "순서배열", "내용일치", "서술형(단어배열)"], 
-            key=f"type_{i}"
+for i in range(num_passages):
+    st.markdown(f"### 📄 지문 {i+1} 세팅")
+    passage = st.text_area(f"지문 {i+1}", height=170, key=f"passage_{i}")
+
+    col_type, col_diff = st.columns([7, 3])
+    with col_type:
+        selected_types = st.multiselect(
+            f"생성할 문제 유형 {i+1}",
+            QUESTION_TYPES,
+            default=["빈칸추론"],
+            key=f"types_{i}",
+            help="여러 유형을 동시에 선택할 수 있습니다. 유형별 문항 수의 합은 지문당 최대 10문제입니다.",
         )
-        q_diff = st.selectbox(f"난이도 {i+1}", ["보통", "쉬움", "어려움"], key=f"diff_{i}")
-    questions_data.append({"passage": passage, "type": q_type, "diff": q_diff})
+    with col_diff:
+        q_diff = st.selectbox(
+            f"공통 난이도 {i+1}",
+            ["보통", "쉬움", "어려움"],
+            key=f"diff_{i}",
+        )
+
+    type_counts = {}
+    if selected_types:
+        st.caption("유형별 생성 문항 수")
+        count_cols = st.columns(min(4, len(selected_types)))
+        for type_idx, q_type in enumerate(selected_types):
+            with count_cols[type_idx % len(count_cols)]:
+                type_counts[q_type] = st.number_input(
+                    q_type,
+                    min_value=1,
+                    max_value=5,
+                    value=1,
+                    step=1,
+                    key=f"count_{i}_{q_type}",
+                )
+
+    specs = [
+        {"type": q_type, "count": int(type_counts[q_type]), "difficulty": q_diff}
+        for q_type in selected_types
+    ]
+    total_for_passage = sum(spec["count"] for spec in specs)
+    if total_for_passage > 10:
+        st.error(f"지문 {i+1}: 현재 {total_for_passage}문제입니다. 지문당 최대 10문제로 줄여주세요.")
+    else:
+        st.caption(f"✅ 이 지문에서 총 {total_for_passage}문제 생성 예정")
+
+    questions_data.append({
+        "passage": passage,
+        "specs": specs,
+        "total": total_for_passage,
+    })
     st.write("")
 
 st.divider()
 
 # 출제 버튼 및 결과 화면
-if st.button("🚀 시험지 초고속 전체 출제 시작", type="primary"):
-    empty_passages = [i+1 for i, q in enumerate(questions_data) if not q['passage'].strip()]
+if st.button("🚀 선택한 문제 한 번에 전체 출제 시작", type="primary"):
+    empty_passages = [i+1 for i, q in enumerate(questions_data) if not q["passage"].strip()]
+    missing_types = [i+1 for i, q in enumerate(questions_data) if not q["specs"]]
+    too_many = [i+1 for i, q in enumerate(questions_data) if q["total"] > 10]
+
     if empty_passages:
-        st.warning(f"⚠️ 문항 {', '.join(map(str, empty_passages))}의 지문이 비어있습니다. 지문을 모두 입력해주세요!")
+        st.warning(f"⚠️ 지문 {', '.join(map(str, empty_passages))}이 비어있습니다. 지문을 모두 입력해주세요!")
+    elif missing_types:
+        st.warning(f"⚠️ 지문 {', '.join(map(str, missing_types))}의 문제 유형을 하나 이상 선택해주세요!")
+    elif too_many:
+        st.warning(f"⚠️ 지문 {', '.join(map(str, too_many))}의 문항 수가 10개를 초과했습니다.")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
-        all_results = [None] * num_questions
-        
-        def process_question(idx, q_data):
-            parsed_result = generate_exam_question(q_data['passage'], q_data['type'], q_data['diff'])
-            return idx, parsed_result
+        all_batches = [None] * num_passages
+        total_requested = sum(q["total"] for q in questions_data)
+
+        def process_passage(idx, q_data):
+            parsed_results = generate_exam_questions(q_data["passage"], q_data["specs"])
+            return idx, parsed_results
 
         try:
-            status_text.text(f"총 {num_questions}문항을 동시에 초고속 분석 및 출제 중입니다. 잠시만 기다려주세요... ⚡")
+            status_text.text(
+                f"총 {total_requested}문항을 {num_passages}개 지문 단위로 묶어 출제 중입니다. "
+                "같은 지문은 API 1회로 처리합니다. ⚡"
+            )
             completed = 0
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_questions, 10)) as executor:
-                futures = {executor.submit(process_question, i, q): i for i, q in enumerate(questions_data)}
-                
+
+            # 지문 단위만 병렬 처리해 과도한 동시 호출과 429 재시도를 줄입니다.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(num_passages, 4)) as executor:
+                futures = {executor.submit(process_passage, i, q): i for i, q in enumerate(questions_data)}
                 for future in concurrent.futures.as_completed(futures):
-                    idx, parsed_result = future.result()
-                    all_results[idx] = parsed_result
+                    idx, parsed_results = future.result()
+                    all_batches[idx] = parsed_results
                     completed += 1
-                    progress_bar.progress(completed / num_questions)
-                
+                    progress_bar.progress(completed / num_passages)
+
+            all_results = []
+            for batch in all_batches:
+                if batch:
+                    all_results.extend(batch)
+
+            if not all_results:
+                raise RuntimeError("생성된 문제가 없습니다. 잠시 후 다시 시도해주세요.")
+
             status_text.text("🎉 시험지 제작이 완료되었습니다!")
-            st.success(f"총 {num_questions}문항 초고속 출제가 완료되었습니다!")
-            
+            st.success(
+                f"총 {len(all_results)}문항 출제가 완료되었습니다. "
+                f"Gemini API 호출은 최대 {num_passages}회(지문당 1회)입니다."
+            )
+
             tab1, tab2, tab3 = st.tabs(["💡 생성된 문제 확인 (웹 뷰)", "🖨️ 시험지 인쇄 (2단 편집)", "🖨️ 해설지 인쇄"])
             circle_nums = ["①", "②", "③", "④", "⑤"]
             
