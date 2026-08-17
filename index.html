@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>YMS 모의고사 시험지 빌더</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">YMS BUSONG · AI EXAM BUILDER</p>
+        <h1>AI 모의고사 시험지 빌더</h1>
+        <p class="hero-copy">여러 지문을 입력하고 문제 유형·문항 수·난이도를 지정하면 한 세트의 내신형 변형문제를 생성합니다.</p>
+      </div>
+      <div class="hero-badge">HTML VERSION</div>
+    </header>
+
+    <main>
+      <section class="panel setup-panel">
+        <div class="section-heading">
+          <div>
+            <span class="step">01</span>
+            <h2>시험 기본 설정</h2>
+          </div>
+          <button id="resetBtn" class="ghost-btn" type="button">초기화</button>
+        </div>
+
+        <label class="field-label" for="textbookName">교재 이름</label>
+        <input id="textbookName" class="text-input" value="2026 수능특강 영어" autocomplete="off" />
+
+        <div class="passage-toolbar">
+          <div>
+            <strong>입력 지문</strong>
+            <span id="passageCountText" class="muted">2개</span>
+          </div>
+          <div class="toolbar-actions">
+            <button id="removePassageBtn" class="secondary-btn" type="button">− 지문 줄이기</button>
+            <button id="addPassageBtn" class="secondary-btn" type="button">+ 지문 추가</button>
+          </div>
+        </div>
+
+        <div id="passagesContainer" class="passages"></div>
+      </section>
+
+      <section class="panel generate-panel">
+        <div class="generate-copy">
+          <span class="step">02</span>
+          <div>
+            <h2>전체 문제 생성</h2>
+            <p>같은 지문에서 선택한 문제들은 한 번의 Gemini 호출로 묶어서 생성합니다.</p>
+          </div>
+        </div>
+        <button id="generateBtn" class="primary-btn" type="button">선택한 문제 한 번에 전체 출제 시작</button>
+      </section>
+
+      <section id="statusPanel" class="status-panel hidden" aria-live="polite">
+        <div class="status-row">
+          <strong id="statusText">준비 중...</strong>
+          <span id="statusPercent">0%</span>
+        </div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+      </section>
+
+      <section id="resultsSection" class="panel results-panel hidden">
+        <div class="section-heading results-heading">
+          <div>
+            <span class="step">03</span>
+            <h2>생성 결과</h2>
+          </div>
+          <div class="result-actions">
+            <button id="printExamBtn" class="secondary-btn" type="button">시험지 인쇄</button>
+            <button id="printAnswersBtn" class="secondary-btn" type="button">해설지 인쇄</button>
+          </div>
+        </div>
+
+        <div id="summaryStrip" class="summary-strip"></div>
+        <div id="resultsContainer" class="results-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <template id="passageTemplate">
+    <article class="passage-card">
+      <div class="card-heading">
+        <div>
+          <span class="passage-index"></span>
+          <h3 class="passage-title"></h3>
+        </div>
+        <span class="total-pill"></span>
+      </div>
+
+      <label class="field-label">지문</label>
+      <textarea class="passage-input" rows="8" placeholder="영어 지문을 입력하세요."></textarea>
+
+      <div class="type-section">
+        <label class="field-label">생성할 문제 유형</label>
+        <div class="type-grid"></div>
+      </div>
+
+      <div class="specs-wrap">
+        <div class="specs-head">
+          <span>선택 유형</span><span>문항 수</span><span>난이도</span>
+        </div>
+        <div class="specs-list"></div>
+      </div>
+      <p class="card-message"></p>
+    </article>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
